@@ -80,40 +80,38 @@ def generate_content(prompt, news_text, expected_lines=None, temperature=0.2):
 
     genai.configure(api_key=API_KEY)
 
-    # 採用 2026 年最標準、絕對存在的型號名稱
-    # 移除 3.1 這種可能帶有歧義的小數點，直接用大版號
-    model_candidates = [
-        "gemini-3-flash",      # 2026 標配：最快、最聰明
-        "gemini-1.5-flash",    # 經典標配：字數控制最穩
-        "gemini-1.5-pro",      # 邏輯標配：處理複雜新聞必備
-    ]
+# --- 工具：清理 AI 文字 (修正：不再刪除小數點) ---
+def clean_ai_output(line):
+    # 移除標點符號，但保留小數點 . 避免破壞模型名稱與數據
+    line = re.sub(r'^[\d\.\s\*\-、\)）]+', '', line)
+    line = re.sub(r'[【】\[\]「」『』（）()，。、！？：；,!?;:]', '', line) # 這裡移除了點號
+    return force_arabic_numerals(line.replace(" ", "")).strip()
 
+# --- Gemini 呼叫：2026 旗艦對頻 ---
+def generate_content(prompt, news_text, expected_lines=None, temperature=0.2):
+    if not API_KEY: return None
+    genai.configure(api_key=API_KEY)
+    
+    # 2026 官方標準名稱：優先使用最新的 Gemini 3
+    model_candidates = [
+        "gemini-3-flash",      # 2026 旗艦：最聰明、對頻最快
+        "gemini-1.5-flash",    # 穩定老將
+        "gemini-1.5-pro",      # 深度分析
+    ]
+    
     last_error = ""
     for model_name in model_candidates:
         try:
-            model = genai.GenerativeModel(
-                model_name=model_name,
-                system_instruction=prompt
-            )
-            response = model.generate_content(
-                f"稿件：\n{news_text}",
-                generation_config={"temperature": temperature}
-            )
-            
-            # 解析並過濾空行
+            model = genai.GenerativeModel(model_name=model_name, system_instruction=prompt)
+            response = model.generate_content(f"稿件：\n{news_text}", generation_config={"temperature": temperature})
             all_lines = [l.strip() for l in response.text.strip().split("\n") if l.strip()]
-
-            if expected_lines:
-                return all_lines[:expected_lines]
+            if expected_lines: return all_lines[:expected_lines]
             return all_lines
-
         except Exception as e:
-            # 捕獲錯誤訊息，準備跳轉下一個模型
-            last_error = f"[{model_name}] {str(e)[:50]}"
-            continue 
-
-    # 如果所有模型都 404，通常是 API Key 權限或地區限制
-    return [f"連線失敗//訊號中斷//原因:{last_error}"]
+            # 這裡記錄原始錯誤，不再透過 clean 函數，讓製作人看清楚
+            last_error = f"[{model_name}] {str(e)}"
+            continue
+    return [f"連線失敗//請檢查後台//原因:{last_error}"]
 
 # --- 6. 字數驗證邏輯 ---
 def is_valid_big_event_line(line, anchor_text=""):
