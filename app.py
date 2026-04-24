@@ -157,11 +157,11 @@ def generate_content(prompt, news_text, expected_lines=None, temperature=0.2):
 
     genai.configure(api_key=API_KEY)
 
+  # 根據製作人要求的 3.1 Lite / 1.5 Pro / 1.5 Flash 組合
     model_candidates = [
-        "gemini-3.1-flash-lite-preview",
-        "gemini-3.1-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-pro",
+        "gemini-3.1-flash-lite-preview", # 製作人指定：最省錢且字數控制佳
+        "gemini-1.5-pro",               # 製作人指定：最聰明 (去掉了會報錯的 -latest)
+        "gemini-1.5-flash",             # 製作人指定：最穩定的發稿主力
     ]
 
     last_error = ""
