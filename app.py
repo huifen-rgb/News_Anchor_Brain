@@ -4,7 +4,7 @@ import re
 import os
 
 # --- 1. 頁面配置 ---
-st.set_page_config(page_title="Producer AI | 專業編播 v17.3", page_icon="📺", layout="wide")
+st.set_page_config(page_title="Producer AI | 專業編播 v17.5", page_icon="📺", layout="wide")
 
 # --- 2. 專業新聞視覺樣式 ---
 st.markdown("""
@@ -40,16 +40,13 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. 安全 API Key 讀取邏輯 (解決 Render 崩潰問題) ---
-API_KEY = os.environ.get("GEMINI_API_KEY") # 優先讀取 Render 環境變數
-
+# --- 3. API Key 讀取 ---
+API_KEY = os.environ.get("GEMINI_API_KEY")
 if not API_KEY:
     try:
-        # 僅在本地或 Streamlit Cloud 嘗試讀取 secrets
         if hasattr(st, "secrets") and "GEMINI_API_KEY" in st.secrets:
             API_KEY = st.secrets["GEMINI_API_KEY"]
-    except Exception:
-        pass
+    except: pass
 
 # --- 4. 專業工具函數 ---
 def force_arabic_numerals(text):
@@ -68,36 +65,19 @@ def force_arabic_numerals(text):
         text = text.replace(zh, ar)
     return text
 
-def clean_ai_output(line):
+def clean_news_text(line):
+    """新聞顯示專用：移除所有標點"""
     line = re.sub(r'^[\d\.\s\*\-、\)）]+', '', line)
     line = re.sub(r'[【】\[\]「」『』（）()，。、！？：；,.!?;:]', '', line)
     return force_arabic_numerals(line.replace(" ", "")).strip()
 
-# --- 修正後的「2026 旗艦」模型清單 ---
-def generate_content(prompt, news_text, expected_lines=None, temperature=0.2):
-    if not API_KEY:
-        return None
-
-    genai.configure(api_key=API_KEY)
-
-# --- 工具：清理 AI 文字 (修正：不再刪除小數點) ---
-def clean_ai_output(line):
-    # 移除標點符號，但保留小數點 . 避免破壞模型名稱與數據
-    line = re.sub(r'^[\d\.\s\*\-、\)）]+', '', line)
-    line = re.sub(r'[【】\[\]「」『』（）()，。、！？：；,!?;:]', '', line) # 這裡移除了點號
-    return force_arabic_numerals(line.replace(" ", "")).strip()
-
-# --- Gemini 呼叫：2026 旗艦對頻 ---
+# --- 5. Gemini 核心生成 (2026 對頻) ---
 def generate_content(prompt, news_text, expected_lines=None, temperature=0.2):
     if not API_KEY: return None
     genai.configure(api_key=API_KEY)
     
-    # 2026 官方標準名稱：優先使用最新的 Gemini 3
-    model_candidates = [
-        "gemini-3-flash",      # 2026 旗艦：最聰明、對頻最快
-        "gemini-1.5-flash",    # 穩定老將
-        "gemini-1.5-pro",      # 深度分析
-    ]
+    # 2026 官方穩定型號
+    model_candidates = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
     
     last_error = ""
     for model_name in model_candidates:
@@ -108,60 +88,75 @@ def generate_content(prompt, news_text, expected_lines=None, temperature=0.2):
             if expected_lines: return all_lines[:expected_lines]
             return all_lines
         except Exception as e:
-            # 這裡記錄原始錯誤，不再透過 clean 函數，讓製作人看清楚
             last_error = f"[{model_name}] {str(e)}"
             continue
-    return [f"連線失敗//請檢查後台//原因:{last_error}"]
+    return [f"連線失敗//訊號中斷//原因:{last_error}"]
 
-# --- 6. 字數驗證邏輯 ---
-def is_valid_big_event_line(line, anchor_text=""):
+# --- 6. 邏輯校對函數 ---
+def is_valid_line(line, min_l, max_l, anchor_text=""):
     if line.count("//") != 2: return False
     parts = line.split("//")
     if len(parts) != 3: return False
     p1, p2, p3 = parts
     if anchor_text and p1 != anchor_text: return False
-    return 7 <= len(p1) <= 8 and 7 <= len(p2) <= 9 and 7 <= len(p3) <= 9
+    return min_l <= len(p1) <= max_l # 這裡簡化檢查，主標邏輯在 UI 層處理
 
-# --- 7. UI 與 執行邏輯 ---
-st.title("📺 Producer AI 智慧分流管理系統 v17.3")
+def get_expected_anchor(anchors, mode, idx, total):
+    if not anchors: return ""
+    if mode == 1: return anchors[0]
+    if mode == 2: return anchors[0] if idx < total // 2 else anchors[-1]
+    s1, s2 = total // 3, (total // 3) * 2
+    if idx < s1: return anchors[0]
+    if idx < s2: return anchors[s1] if len(anchors) > s1 else anchors[-1]
+    return anchors[-1]
+
+# --- 7. UI 與執行 ---
+st.title("📺 Producer AI 智慧分流系統 v17.5")
 
 with st.sidebar:
     st.header("⚙️ 編播控制台")
     if not API_KEY:
         API_KEY = st.text_input("Gemini API Key", type="password")
     anchor_mode = st.radio("1. 指定主標數量", [1, 2, 3], index=1)
-    format_type = st.radio("2. 鏡面格式", ["完整三段", "僅後二段"])
-    line_total = st.slider("3. 大事框行數", 3, 12, 6)
-    side_line_total = st.slider("4. 側標行數", 1, 5, 3)
+    line_total = st.slider("2. 大事框行數", 3, 12, 6)
+    side_line_total = st.slider("3. 側標行數", 1, 5, 3)
     auto_regen = st.checkbox("自動重生錯誤行", value=True)
 
 col_in, col_out = st.columns([2, 3])
 
 with col_in:
     news_input = st.text_area("📝 貼入原始稿件", height=250)
-    highlights = st.text_area("💡 重點提示 (AI優先寫入)", height=100)
-    btn_col1, btn_col2 = st.columns(2)
-    with btn_col1: run_btn = st.button("🚀 執行：大事框", use_container_width=True)
-    with btn_col2: side_btn = st.button("🏷️ 執行：10字側標", use_container_width=True)
+    highlights = st.text_area("💡 重點提示 (必含)", height=100)
+    btn1, btn2 = st.columns(2)
+    run_btn = btn1.button("🚀 大事框", use_container_width=True)
+    side_btn = btn2.button("🏷️ 10字側標", use_container_width=True)
 
 with col_out:
-    if not API_KEY:
-        st.warning("請在側邊欄輸入 API Key 或設定環境變數。")
-    
     if run_btn and news_input:
-        with st.spinner("正在精準編排大事框..."):
-            # 獲取大事框 Prompt 並執行
-            prompt = f"製作人任務：產出 {line_total} 條大事框。規格：主標//內容//細節。字數：7-8//7-9//7-9。重點：{highlights}。"
+        with st.spinner("製作人審稿中..."):
+            prompt = f"製作人任務：產出 {line_total} 條大事框。格式：主標//內容//細節。字數：7-8//7-9//7-9。主標分組：{anchor_mode}。重點：{highlights}。"
             results = generate_content(prompt, news_input, line_total)
-            if results:
+            
+            if results and "//" in results[0]:
                 copy_text = ""
-                for i, line in enumerate(results):
-                    clean_line = clean_ai_output(line)
-                    if clean_line.count("//") == 2:
-                        p1, p2, p3 = clean_line.split("//")
-                        st.markdown(f'<div class="news-box">{p1} // {p2} // {p3}</div>', unsafe_allow_html=True)
-                        copy_text += clean_line + "\n"
+                clean_lines = [clean_news_text(l) for l in results]
+                # 抓取主標樣板
+                sample_anchors = [l.split("//")[0] for l in clean_lines if "//" in l]
+                
+                for i, line in enumerate(clean_lines):
+                    if line.count("//") == 2:
+                        p1, p2, p3 = line.split("//")
+                        # 定錨強制校正
+                        expected = get_expected_anchor(sample_anchors, anchor_mode, i, line_total)
+                        if expected: p1 = expected
+                        
+                        l1, l2, l3 = len(p1), len(p2), len(p3)
+                        t1 = f"({l1}字)" if 7<=l1<=8 else f"({l1}字⚠️)"
+                        st.markdown(f'<div class="news-box"><span class="anchor-text">{p1}</span>{t1}<span class="separator">//</span>{p2}<span class="separator">//</span>{p3}</div>', unsafe_allow_html=True)
+                        copy_text += f"{p1}//{p2}//{p3}\n"
                 st.text_area("📋 複製區", value=copy_text.strip(), height=150)
+            else:
+                st.error(results[0] if results else "生成失敗")
 
     if side_btn and news_input:
         with st.spinner("生成側標中..."):
@@ -170,7 +165,7 @@ with col_out:
             if results:
                 copy_text = ""
                 for line in results:
-                    clean_line = clean_ai_output(line)
-                    st.markdown(f'<div class="side-box">{clean_line} ({len(clean_line)}字)</div>', unsafe_allow_html=True)
-                    copy_text += clean_line + "\n"
+                    clean_l = clean_news_text(line)
+                    st.markdown(f'<div class="side-box">{clean_l} ({len(clean_l)}字)</div>', unsafe_allow_html=True)
+                    copy_text += clean_l + "\n"
                 st.text_area("📋 複製區", value=copy_text.strip(), height=150)
