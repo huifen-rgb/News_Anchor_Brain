@@ -40,7 +40,17 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-API_KEY = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
+# --- 強效版 API_KEY 抓取邏輯 ---
+try:
+    # 優先嘗試從 Streamlit Secrets 讀取
+    API_KEY = st.secrets.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", ""))
+except Exception:
+    # 如果完全沒有 Secrets 檔案 (如 Render 環境)，直接抓系統環境變數
+    API_KEY = os.environ.get("GEMINI_API_KEY", "")
+
+# 偵錯用：如果還是空的，在頁面上提醒妳 (部署成功後可刪除這行)
+if not API_KEY:
+    st.error("⚠️ 尚未偵測到 API Key，請檢查 Render 的 Environment Variables 設定。")
 
 # --- 工具：中文數字轉阿拉伯數字 ---
 def force_arabic_numerals(text):
