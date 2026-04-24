@@ -77,7 +77,11 @@ def generate_content(prompt, news_text, expected_lines=None, temperature=0.2):
     genai.configure(api_key=API_KEY)
     
     # 2026 官方穩定型號
-    model_candidates = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
+   model_candidates = [
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+]
     
     last_error = ""
     for model_name in model_candidates:
