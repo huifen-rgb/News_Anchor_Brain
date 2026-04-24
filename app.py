@@ -151,19 +151,17 @@ def get_side_slogan_prompt(line_count, highlights):
 """
 
 # --- Gemini 呼叫：低溫 + 物理截斷 + 模型 fallback ---
-# --- 修正後的模型清單 ---
 def generate_content(prompt, news_text, expected_lines=None, temperature=0.2):
     if not API_KEY:
         return None
 
     genai.configure(api_key=API_KEY)
 
-    # 確保這裡的名稱都是目前 active 的穩定版本
     model_candidates = [
-        "gemini-3.1-flash-lite-preview", # 目前最省油、最快的模型
-        "gemini-3.1-flash",              # 備援 1
-        "gemini-1.5-flash",              # 備援 2
-        "gemini-1.5-pro-latest",         # 備援 3 (較重但最聰明)
+        "gemini-3.1-flash-lite-preview",
+        "gemini-3.1-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro-latest",
     ]
 
     last_error = ""
@@ -173,7 +171,22 @@ def generate_content(prompt, news_text, expected_lines=None, temperature=0.2):
                 model_name=model_name,
                 system_instruction=prompt
             )
-            # ... (後面邏輯維持不變)
+            response = model.generate_content(
+                f"稿件：\n{news_text}",
+                generation_config={"temperature": temperature}
+            )
+            # 取得文字並切分行
+            all_lines = [l.strip() for l in response.text.strip().split("\n") if l.strip()]
+
+            if expected_lines:
+                return all_lines[:expected_lines]
+            return all_lines
+
+        except Exception as e:
+            last_error = str(e)[:80]
+            continue  # 失敗了就換下一個型號試試看
+
+    return [f"錯誤//重試//原因:{last_error}"]
 
 # --- 驗證大事框單行 ---
 def is_valid_big_event_line(line, anchor_text=""):
@@ -186,9 +199,11 @@ def is_valid_big_event_line(line, anchor_text=""):
 
     p1, p2, p3 = parts
 
+    # 如果有要求特定主標，則檢查是否一致
     if anchor_text and p1 != anchor_text:
         return False
 
+    # 檢查字數規格：主標 7-8，內容 7-9，細節 7-9
     return 7 <= len(p1) <= 8 and 7 <= len(p2) <= 9 and 7 <= len(p3) <= 9
 
 # --- 預期主標判斷 ---
