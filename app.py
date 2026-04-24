@@ -151,40 +151,56 @@ def get_side_slogan_prompt(line_count, highlights):
 """
 
 # --- Gemini 呼叫：低溫 + 物理截斷 + 模型 fallback ---
-def generate_content(prompt, news_text, expected_lines=None, temperature=0.2):
+def generate_content(prompt, news_text, expected_lines=None, temperature=0.7):
     if not API_KEY:
-        return None
-
+        return [f"錯誤//偵測不到API Key//請檢查環境變數"]
+    
     genai.configure(api_key=API_KEY)
-
+    
+    # --- 修正後的模型清單 (確保拼字正確，並移除不穩定的預覽版) ---
     model_candidates = [
-        "gemini-3.1-flash-lite-preview",
-        "gemini-1.5-pro-latest",
-        "gemini-1.5-flash",
+        "gemini-1.5-flash",      # 最穩定、速度快
+        "gemini-1.5-pro",        # 邏輯更強，適合作為備援
+        "gemini-2.0-flash-exp",  # 如果 API 支援，這是目前更強的版本
     ]
 
     last_error = ""
     for model_name in model_candidates:
         try:
+            # 建立模型實例
             model = genai.GenerativeModel(
                 model_name=model_name,
                 system_instruction=prompt
             )
+            
+            # 生成內容
             response = model.generate_content(
                 f"稿件：\n{news_text}",
-                generation_config={"temperature": temperature}
+                generation_config={
+                    "temperature": temperature,
+                    "top_p": 0.95,
+                    "top_k": 40,
+                }
             )
+            
+            # 檢查回應是否包含有效文字
+            if not response.text:
+                continue
+                
             all_lines = [l.strip() for l in response.text.strip().split("\n") if l.strip()]
-
+            
+            # 如果有指定行數，則進行裁切；否則全部回傳
             if expected_lines:
                 return all_lines[:expected_lines]
             return all_lines
 
         except Exception as e:
-            last_error = str(e)[:80]
-            continue
+            # 擷取錯誤訊息以便除錯
+            last_error = str(e).replace(" ", "") # 移除空格方便辨識
+            continue # 嘗試下一個模型
 
-    return [f"錯誤//重試//原因:{last_error}"]
+    # 如果所有模型都失敗，回傳最後一個錯誤
+    return [f"系統//連線失敗//原因:{last_error[:50]}"]
 
 # --- 驗證大事框單行 ---
 def is_valid_big_event_line(line, anchor_text=""):
