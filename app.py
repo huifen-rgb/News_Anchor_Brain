@@ -73,26 +73,47 @@ def clean_ai_output(line):
     line = re.sub(r'[【】\[\]「」『』（）()，。、！？：；,.!?;:]', '', line)
     return force_arabic_numerals(line.replace(" ", "")).strip()
 
-# --- 5. 核心：低溫生成與模型 Fallback ---
+# --- 修正後的「2026 旗艦」模型清單 ---
 def generate_content(prompt, news_text, expected_lines=None, temperature=0.2):
-    if not API_KEY: return None
+    if not API_KEY:
+        return None
+
     genai.configure(api_key=API_KEY)
-    
-    # 2026 穩定通訊名單
-    model_candidates = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-3.1-flash-lite"]
-    
+
+    # 採用 2026 年最標準、絕對存在的型號名稱
+    # 移除 3.1 這種可能帶有歧義的小數點，直接用大版號
+    model_candidates = [
+        "gemini-3-flash",      # 2026 標配：最快、最聰明
+        "gemini-1.5-flash",    # 經典標配：字數控制最穩
+        "gemini-1.5-pro",      # 邏輯標配：處理複雜新聞必備
+    ]
+
     last_error = ""
     for model_name in model_candidates:
         try:
-            model = genai.GenerativeModel(model_name=model_name, system_instruction=prompt)
-            response = model.generate_content(f"稿件：\n{news_text}", generation_config={"temperature": temperature})
+            model = genai.GenerativeModel(
+                model_name=model_name,
+                system_instruction=prompt
+            )
+            response = model.generate_content(
+                f"稿件：\n{news_text}",
+                generation_config={"temperature": temperature}
+            )
+            
+            # 解析並過濾空行
             all_lines = [l.strip() for l in response.text.strip().split("\n") if l.strip()]
-            if expected_lines: return all_lines[:expected_lines]
+
+            if expected_lines:
+                return all_lines[:expected_lines]
             return all_lines
+
         except Exception as e:
-            last_error = str(e)[:80]
-            continue
-    return [f"連線失敗//請檢查後台//原因:{last_error}"]
+            # 捕獲錯誤訊息，準備跳轉下一個模型
+            last_error = f"[{model_name}] {str(e)[:50]}"
+            continue 
+
+    # 如果所有模型都 404，通常是 API Key 權限或地區限制
+    return [f"連線失敗//訊號中斷//原因:{last_error}"]
 
 # --- 6. 字數驗證邏輯 ---
 def is_valid_big_event_line(line, anchor_text=""):
