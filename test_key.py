@@ -1,7 +1,7 @@
 from google import genai
 
 # 填入妳在「新專案」申請的新金鑰
-client = genai.Client(api_key="AIzaSyDKnbMWPRM6UIUBm_3au2IWXQN_iZDkT0s")
+client = genai.Client(api_key="")
 
 try:
     response = client.models.generate_content(
